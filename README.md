@@ -1,0 +1,2 @@
+# ultralytics_yoloworld
+基于ultralytics框架研究yoloworld流程

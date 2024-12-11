@@ -57,9 +57,34 @@ class DFL(nn.Module):
 
     def forward(self, x):
         """Applies a transformer layer on input tensor 'x' and returns a tensor."""
-        b, _, a = x.shape  # batch, channels, anchors
-        return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a)
+        # b, _, a = x.shape  # batch, channels, anchors
+        # print(self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a).shape)
+        # return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a)
         # return self.conv(x.view(b, self.c1, 4, a).softmax(1)).view(b, 4, a)
+
+
+        ## export时用
+        # print("x", x.shape)
+        # 此时可以少一步reshape的操作
+        t1 = x.view(x.shape[0], 4, self.c1 * 20, -1)
+        # print("t1", t1.shape)
+        t2 = t1.permute(0, 2, 3, 1)
+        # print("t2", t2.shape)
+        t3 = t2.reshape(x.shape[0], self.c1, 20, -1)
+        # print("t3", t3.shape)
+        t4 = t3.softmax(1)
+        # print("t4", t4.shape)
+        result = self.conv(t4)
+        # print("result", result.shape)
+        result1 = result.permute(0, 1, 3, 2)
+        # print("result1", result1.shape)
+        result2 = result1.reshape(x.shape[0], -1, 4, 20)
+        # print("result2", result2.shape)
+        result3 = result2.permute(0, 2, 3, 1)
+        # print("result3", result3.shape)
+        ## result = self.conv(x.view(x.shape[0], 4, self.c1, -1).transpose(2, 1).softmax(1))   
+        # return result3  # 原始
+        return result3.view(1, 4, -1)  # 方便后续算框的操作
 
 
 class Proto(nn.Module):
@@ -415,6 +440,42 @@ class MaxSigmoidAttnBlock(nn.Module):
         self.proj_conv = Conv(c1, c2, k=3, s=1, act=False)
         self.scale = nn.Parameter(torch.ones(1, nh, 1, 1)) if scale else 1.0
 
+    # def forward(self, x, guide):
+    #     """Forward process."""
+    #     bs, _, h, w = x.shape
+
+    #     guide = self.gl(guide)
+    #     guide = guide.view(bs, -1, self.nh, self.hc)
+    #     embed = self.ec(x) if self.ec is not None else x
+    #     print("embed0", embed.shape)
+    #     embed = embed.view(bs, self.nh, self.hc, h, w)
+    #     print("embed1", embed.shape)
+    #     # aw = torch.einsum("bmchw,bnmc->bmhwn", embed, guide)
+
+    #     batch, m, channel, height, width = embed.shape
+    #     _, n, _, _ = guide.shape
+    #     embed = embed.permute(0, 1, 3, 4, 2)
+    #     print("embed4", embed.shape)
+    #     embed = embed.reshape(batch, m, -1, channel)
+    #     print("embed5", embed.shape)
+    #     guide = guide.permute(0, 2, 3, 1)
+    #     print("guide", guide.shape)
+    #     attn_weight = torch.matmul(embed, guide)
+    #     print("attn_weight", attn_weight.shape)
+    #     attn_weight = attn_weight.reshape(batch, m, height, width, n)
+    #     print("attn_weight 11", attn_weight.shape)
+    #     aw = attn_weight.max(dim=-1)[0]
+    #     print("aw", aw.shape)
+    #     aw = aw / (self.hc**0.5)
+    #     aw = aw + self.bias[None, :, None, None]
+    #     aw = aw.sigmoid() * self.scale
+
+    #     x = self.proj_conv(x)
+    #     x = x.view(bs, self.nh, -1, h, w)
+    #     x = x * aw.unsqueeze(2)
+    #     return x.view(bs, -1, h, w)
+
+    # 转模型时使用
     def forward(self, x, guide):
         """Forward process."""
         bs, _, h, w = x.shape
@@ -422,25 +483,39 @@ class MaxSigmoidAttnBlock(nn.Module):
         guide = self.gl(guide)
         guide = guide.view(bs, -1, self.nh, self.hc)
         embed = self.ec(x) if self.ec is not None else x
-        embed = embed.view(bs, self.nh, self.hc, h, w)
-
+        print("embed0", embed.shape)
+        embed = embed.view(bs, self.nh, self.hc, h*w)
+        print("embed1", embed.shape)
         # aw = torch.einsum("bmchw,bnmc->bmhwn", embed, guide)
 
-        batch, m, channel, height, width = embed.shape
+        # batch, m, channel, height, width = embed.shape
         _, n, _, _ = guide.shape
-        embed = embed.permute(0, 1, 3, 4, 2)
-        embed = embed.reshape(batch, m, -1, channel)
+        # embed = embed.permute(0, 1, 3, 4, 2)
+        embed = embed.permute(0, 1, 3, 2)
+        print("embed4", embed.shape)
+        # embed = embed.reshape(batch, m, -1, channel)
+        print("embed5", embed.shape)
         guide = guide.permute(0, 2, 3, 1)
+        print("guide", guide.shape)
         attn_weight = torch.matmul(embed, guide)
-        attn_weight = attn_weight.reshape(batch, m, height, width, n)
+        print("attn_weight", attn_weight.shape)
+        # attn_weight = attn_weight.reshape(batch, m, height, width, n)
+        print("attn_weight 11", attn_weight.shape)
         aw = attn_weight.max(dim=-1)[0]
+        aw = aw.view(1, -1, h, w)
+        print("aw", aw.shape)
         aw = aw / (self.hc**0.5)
         aw = aw + self.bias[None, :, None, None]
         aw = aw.sigmoid() * self.scale
 
         x = self.proj_conv(x)
-        x = x.view(bs, self.nh, -1, h, w)
-        x = x * aw.unsqueeze(2)
+        print("x",x.shape)
+        x = x.view(self.nh, -1, h, w)
+        print("aw1", aw.shape)
+        print("x", x.shape)
+        print("aw2", aw.unsqueeze(2).shape)
+        x = x * aw.unsqueeze(2).squeeze(0)
+        print("xx", x.shape)
         return x.view(bs, -1, h, w)
 
 

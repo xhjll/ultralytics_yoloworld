@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 
-CLASSES = ['person', 'bus']
+CLASSES = ["person", "bus", "truck", "bicycle", "dog"]
 
 meshgrid = []
 
@@ -177,6 +177,78 @@ def postprocess(out, img_h, img_w):
 
     return predBox
 
+def xywh2xyxy(x):
+    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    y[..., 0] = x[..., 0] - x[..., 2] / 2  # top left x
+    y[..., 1] = x[..., 1] - x[..., 3] / 2  # top left y
+    y[..., 2] = x[..., 0] + x[..., 2] / 2  # bottom right x
+    y[..., 3] = x[..., 1] + x[..., 3] / 2  # bottom right y
+    return y
+
+def postprocess_plus(out, img_h, img_w):
+    print('postprocess ... ')
+
+    detectResult = []
+    output = []
+    # for i in range(len(out)):
+    #     print(out[i].shape)
+    #     output.append(out[i].reshape((-1)))
+    output = out
+    print(output.shape)
+    output = np.transpose(output, (0, 2, 1))
+    print(output.shape)
+
+    scale_h = img_h / input_imgH
+    scale_w = img_w / input_imgW
+
+
+    # 直接推理
+    boxes, scores = output[..., :4], output[..., 4:]
+    print(boxes.shape, scores.shape)   # 前面是框 后面是类别
+
+    boxes = boxes.squeeze(0)  # 去掉批次维度
+    scores = scores.squeeze(0)  # 去掉批次维度
+
+    # 获取每个框的最大分类概率及其索引
+    max_scores = np.max(scores, axis=1)
+    max_classes = np.argmax(scores, axis=1)
+
+    # 过滤掉低于阈值的框
+    pc = max_scores > objectThresh
+    boxes, max_scores, max_classes = boxes[pc], max_scores[pc], max_classes[pc]
+    
+    boxes = xywh2xyxy(boxes)
+    # print(boxes, max_scores, max_classes)
+    
+    for i in range(len(boxes)):
+        box = boxes[i]
+        cls_index = max_classes[i]
+        cls_max = max_scores[i]
+        x1 = box[0]
+        y1 = box[1]
+        x2 = box[2]
+        y2 = box[3]
+        # print(cls_index, cls_max, x1, y1, x2, y2)
+        
+        xmin = x1 * scale_w
+        ymin = y1 * scale_h
+        xmax = x2 * scale_w
+        ymax = y2 * scale_h
+
+        xmin = xmin if xmin > 0 else 0
+        ymin = ymin if ymin > 0 else 0
+        xmax = xmax if xmax < img_w else img_w
+        ymax = ymax if ymax < img_h else img_h
+        
+
+        box = DetectBox(cls_index, cls_max, xmin, ymin, xmax, ymax)
+        detectResult.append(box)
+    # NMS
+    print('detectResult:', len(detectResult))
+    predBox = NMS(detectResult)
+
+    return predBox
+
 
 def precess_image(img_src, resize_w, resize_h):
     image = cv2.resize(img_src, (resize_w, resize_h), interpolation=cv2.INTER_LINEAR)
@@ -200,13 +272,21 @@ def detect(img_path):
     # print(image.shape)
 
     # ort_session = ort.InferenceSession('./yoloworld_v2_zq.onnx')
-    ort_session = ort.InferenceSession('./yoloworld_v2_cmm-sim.onnx')
+    # ort_session = ort.InferenceSession('./yoloworld_v2_cmm-sim6.onnx')   # 6个检测头
+    ort_session = ort.InferenceSession('./yoloworld_v2_cmm_sim4.onnx')  # 1个输出头[框+类别]  yolov8s-worldv2  yoloworld_v2_cmm_sim1
     pred_results = (ort_session.run(None, {'data': image}))
 
     out = []
-    for i in range(len(pred_results)):
-        out.append(pred_results[i])
-    predbox = postprocess(out, img_h, img_w)
+    # 6个输出头
+    # print(len(pred_results))   # 6个输出头
+    # for i in range(len(pred_results)):
+    #     out.append(pred_results[i])
+    # predbox = postprocess(out, img_h, img_w)
+
+    #1个输出头
+    print(len(pred_results))
+    out = pred_results
+    predbox = postprocess_plus(out[0], img_h, img_w)  # 只有一层输出，取0就好
 
     print('obj num is :', len(predbox))
 
@@ -217,17 +297,17 @@ def detect(img_path):
         ymax = int(predbox[i].ymax)
         classId = predbox[i].classId
         score = predbox[i].score
-
+        print(classId, score, xmin, ymin, xmax, ymax)
         cv2.rectangle(orig, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
         ptext = (xmin, ymin)
         title = CLASSES[classId] + "%.2f" % score
         cv2.putText(orig, title, ptext, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
-    cv2.imwrite('./test_onnx_result22.jpg', orig)
+    cv2.imwrite('./test_onnx_result99.jpg', orig)
 
 
 if __name__ == '__main__':
     print('This is main ....')
     GenerateMeshgrid()
-    img_path = './test.jpg'
+    img_path = './test3.jpg'
     detect(img_path)

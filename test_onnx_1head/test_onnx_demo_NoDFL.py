@@ -158,17 +158,17 @@ def postprocess(out, img_h, img_w):
                     y1 = (meshgrid[gridIndex + 1] - regdfl[1]) * strides[index]
                     x2 = (meshgrid[gridIndex + 0] + regdfl[2]) * strides[index]
                     y2 = (meshgrid[gridIndex + 1] + regdfl[3]) * strides[index]
-
+                    # print(x1,y1,x2,y2)
                     xmin = x1 * scale_w
                     ymin = y1 * scale_h
                     xmax = x2 * scale_w
                     ymax = y2 * scale_h
-
+                    # print(xmin, ymin, xmax, ymax)
                     xmin = xmin if xmin > 0 else 0
                     ymin = ymin if ymin > 0 else 0
                     xmax = xmax if xmax < img_w else img_w
                     ymax = ymax if ymax < img_h else img_h
-
+                    # print(cls_index, cls_max, xmin, ymin, xmax, ymax)
                     box = DetectBox(cls_index, cls_max, xmin, ymin, xmax, ymax)
                     detectResult.append(box)
     # NMS
@@ -200,7 +200,7 @@ def detect(img_path):
     # print(image.shape)
 
     # ort_session = ort.InferenceSession('./yoloworld_v2_zq.onnx')
-    ort_session = ort.InferenceSession('./yoloworld_v2_cmm-sim.onnx')
+    ort_session = ort.InferenceSession('./yoloworld_v2_cmm-sim6.onnx')
     pred_results = (ort_session.run(None, {'data': image}))
 
     out = []
@@ -217,6 +217,7 @@ def detect(img_path):
         ymax = int(predbox[i].ymax)
         classId = predbox[i].classId
         score = predbox[i].score
+        print(classId, score, xmin, ymin, xmax, ymax)
 
         cv2.rectangle(orig, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
         ptext = (xmin, ymin)

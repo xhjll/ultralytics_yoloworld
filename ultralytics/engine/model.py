@@ -250,13 +250,39 @@ class Model(nn.Module):
         self.overrides["task"] = self.task
         self.model_name = weights
 
-        print("===========  onnx =========== ")
+        print("===========  onnx  =========== ")
         import torch
         dummy_input = torch.randn(1, 3, 640, 640)
         input_names = ["data"]
-        output_names = ["reg1", "cls1", "reg2", "cls2", "reg3", "cls3"]
-        torch.onnx.export(self.model, dummy_input, "./yoloworld_v2_zq.onnx", verbose=False, input_names=input_names, output_names=output_names, opset_version=12)
+        # output_names = ["reg1", "cls1", "reg2", "cls2", "reg3", "cls3"]
+        output_names = ["reg1"] # "cls1", "reg2", "cls2"
+        torch.onnx.export(self.model, dummy_input, "/home/chenmiaomiao/work_program/Detection/Detection/ultralytics_yoloworld/yoloworld_v2_cmm.onnx", verbose=False, input_names=input_names, output_names=output_names, opset_version=12)
         print("======================== convert onnx Finished! .... ")
+
+        print("===========  onnx simplfy  =========== ")
+           # Checks
+        import onnx
+        model_onnx = onnx.load("/home/chenmiaomiao/work_program/Detection/Detection/ultralytics_yoloworld/yoloworld_v2_cmm.onnx")  # load onnx model
+        # onnx.checker.check_model(model_onnx)  # check onnx model
+
+        # Metadata
+        d = {'stride': int(max(self.model.stride)), 'names': self.model.names}
+        for k, v in d.items():
+            meta = model_onnx.metadata_props.add()
+            meta.key, meta.value = k, str(v)
+        onnx.save(model_onnx, "/home/chenmiaomiao/work_program/Detection/Detection/ultralytics_yoloworld/yoloworld_v2_cmm.onnx")
+
+        # Simplify
+        try:
+            import onnxsim
+            print(f'ONNX simplifying with onnx-simplifier {onnxsim.__version__}...')
+            model_onnx, check = onnxsim.simplify(model_onnx)
+            assert check, "Simplified ONNX model could not be validated"
+            onnx.save(model_onnx, "/home/chenmiaomiao/work_program/Detection/Detection/ultralytics_yoloworld/yoloworld_v2_cmm_sim.onnx")
+            print('ONNX Simplify success, saved as %s' % "/home/chenmiaomiao/work_program/Detection/Detection/ultralytics_yoloworld/yoloworld_v2_cmm_sim.onnx")
+        except Exception as e:
+            print('ONNX Simplify Fialed')
+
 
     def _check_is_pytorch_model(self) -> None:
         """Raises TypeError is model is not a PyTorch model."""

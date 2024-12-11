@@ -218,13 +218,13 @@ class WorldDetect(Detect):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
 
         # 导出 onnx 增加
-        y = []
-        for i in range(self.nl):
-            t1 = self.cv2[i](x[i])
-            t2 = self.cv4[i](self.cv3[i](x[i]), text)
-            y.append(t1)
-            y.append(t2)
-        return y
+        # y = []
+        # for i in range(self.nl):
+        #     t1 = self.cv2[i](x[i])
+        #     t2 = self.cv4[i](self.cv3[i](x[i]), text)
+        #     y.append(t1)
+        #     y.append(t2)
+        # return y
 
         for i in range(self.nl):
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), text)), 1)
@@ -256,7 +256,9 @@ class WorldDetect(Detect):
             dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
         y = torch.cat((dbox, cls.sigmoid()), 1)
-        return y if self.export else (y, x)
+        # return y if self.export else (y, x)
+        return y   # 转1层输出
+        # return dbox, cls.sigmoid()   # 转2层输出，分别是框和类别
 
     def bias_init(self):
         """Initialize Detect() biases, WARNING: requires stride availability."""
